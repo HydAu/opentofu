@@ -19,30 +19,73 @@ resource "aws_instance" "example" {
 }
 ```
 
+This is available not only to resources, but to modules too:
+
+```
+module "modcall" {
+  source = "./mod"
+
+  lifecycle {
+    enabled = var.env == "production"
+  }
+}
+```
+
 ## Proposed Solution
 
-1. Add a new field on the `lifecycle` block called `enabled`;
 1. Raise errors if a resource is used while being disabled;
-1. Support for conditional enabling for:
-  1. Resources
-  1. Modules
+1. Support for conditional enabling on:
+  1. Resources - Add a new field on the `lifecycle` block called `enabled`;
+  1. Modules - Add a new `lifecycle` block for Modules but only supporting the `enabled` field.
 
-## Errors when resource is not enabled 
+
+## Technical Approach
+
+### `lifecycle` support on Modules
+
+Lifecycle block is currently not supported on `Modules`, but in our docs we're mentioning to users that it's reserved for future usage:
+
+> OpenTofu does not use the lifecycle argument. However, the lifecycle block is reserved for future versions.
+
+https://opentofu.org/docs/language/modules/syntax/#meta-arguments
+
+It would be the right timing to start to support it, but only for the `enabled` field.
+
+### Usage of `enabled` together with `for_each` and `count`.
+
+These three different arguments would behave similarly, but with different semantics.
+It could be argued that you want to enable a resource with 4 instances, but on our current code, you can already change that conditional by setting `count` to 0.
+
+I propose that we do not support them together. You can only use one of them, returning errors if we try to use the others together.
+
+Semantically, this feature would be used for single-instance resources or modules.
+
+### Errors when resource is not enabled
 
 If a resource is disabled, it shouldn't be possible to access the attributes since the resource
 is not on the graph. We prefer to loudly tell the user they're trying to access something that is not
 available. In order to have a good user experience while they want to enable/disable stuff, we
 offer a way to silently fail while trying to access that, by using the `try` function.
 
-## Open questions
+### What happens when it's disabled
 
-1. Can we use unknown values as expressions on the `enabled` field?
-  1. My initial answer would be no.
-1. How to migrate from existing count managed resources to use `enabled`?
-  1. Need to provide a good way that is not too brittle
-1. What should we do if a previously enabled resource is disabled?
-  1. Should we destroy or ignore the previous state?
-1. Should we support `enabled` together with `for_each` or `count`? 
-  1. My initial answer would be no, since the three of them acts like expanders.
-1. Since we're using `lifecycle` for having the resource enabled, what should we use on `modules`?
-  1. Should we add `lifecycle` to `modules`? https://opentofu.org/docs/language/modules/syntax/#meta-arguments On this page we're saying `lifecycle` is reserved for future usage.
+Let's suppose we have a created a resource using the `lifecycle -> enabled` field and then we want to disable it.
+The behavior is going to be the same as if you wanted to destroy a resource:
+
+```
+# aws_instance.demo_vm_2 will be destroyed
+  - resource "aws_instance" "demo_vm_2" {
+      - ami                                  = "ami-07df274a488ca9195" -> null
+      - arn                                  = "arn:aws:ec2:eu-central-1:532199187081:instance/i-0b63433033e61d818" -> null
+      - associate_public_ip_address          = true -> null
+      - availability_zone                    = "eu-central-1b" -> null
+```
+
+### What types of variables are supported on the conditional
+
+There are a few types of values that cannot be used on this conditional:
+
+1. Unknown values, since they cannot be used until the apply phase
+1. Sensitive values
+1. Null values
+1. Conditionals that do not evaluate to true/bool values
