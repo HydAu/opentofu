@@ -43,4 +43,6 @@ offer a way to silently fail while trying to access that, by using the `try` fun
 1. What should we do if a previously enabled resource is disabled?
   1. Should we destroy or ignore the previous state?
 1. Should we support `enabled` together with `for_each` or `count`? 
-  1. My initial answer would be no.
+  1. My initial answer would be no, since the three of them acts like expanders.
+1. Since we're using `lifecycle` for having the resource enabled, what should we use on `modules`?
+  1. Should we add `lifecycle` to `modules`? https://opentofu.org/docs/language/modules/syntax/#meta-arguments On this page we're saying `lifecycle` is reserved for future usage.
